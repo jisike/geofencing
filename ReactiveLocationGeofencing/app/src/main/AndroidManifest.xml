@@ -25,6 +25,8 @@
             android:value="@integer/google_play_services_version"
 
             tools:replace="android:value" />
+
+        <receiver android:name="com.ekeneijeoma.geofencing.GeofenceBroadcastReceiver" />
     </application>
 
 </manifest>
