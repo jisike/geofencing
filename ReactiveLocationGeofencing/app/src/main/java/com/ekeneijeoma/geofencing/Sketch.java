@@ -5,10 +5,13 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.location.Location;
+import android.util.Log;
 import android.view.Gravity;
 import android.widget.Toast;
 
 import com.google.android.gms.common.api.Status;
+import com.google.android.gms.location.ActivityRecognitionResult;
+import com.google.android.gms.location.DetectedActivity;
 import com.google.android.gms.location.Geofence;
 import com.google.android.gms.location.GeofencingRequest;
 import com.google.android.gms.location.LocationRequest;
@@ -51,6 +54,8 @@ public class Sketch extends PApplet {
 
     boolean first = true;
 
+    boolean bCapturingActivity = false;
+
     @Override
     public void settings() {
         fullScreen();
@@ -65,6 +70,7 @@ public class Sketch extends PApplet {
         loadGeofences();
 
         startLocation();
+        startDetectingActivity();
     }
 
     public void draw() {
@@ -75,6 +81,35 @@ public class Sketch extends PApplet {
         textAlign(CENTER);
 
         drawLocations();
+    }
+
+    private void startDetectingActivity() {
+        ReactiveLocationProvider locationProvider = new ReactiveLocationProvider(context);
+        Subscription subscription = locationProvider.getDetectedActivity(1000)
+                .subscribe(new Action1<ActivityRecognitionResult>() {
+                    @Override
+                    public void call(ActivityRecognitionResult detectedActivity) {
+                        DetectedActivity activity = detectedActivity.getMostProbableActivity();
+                        switch (activity.getType()) {
+                            case DetectedActivity.STILL:
+                                if (bCapturingActivity) {
+                                    clearGeofence();
+                                    bCapturingActivity = false;
+                                }
+                                break;
+                            case DetectedActivity.IN_VEHICLE:
+                            case DetectedActivity.ON_BICYCLE:
+                            case DetectedActivity.ON_FOOT:
+                            case DetectedActivity.UNKNOWN:
+                            case DetectedActivity.TILTING:
+                                if (!bCapturingActivity) {
+                                    bCapturingActivity = true;
+                                    startGeofences();
+                                }
+                                break;
+                        }
+                    }
+                });
     }
 
     private void startLocation() {
@@ -214,6 +249,9 @@ public class Sketch extends PApplet {
     void startGeofences() {
         println("startGeofences");
 
+        if (!bCapturingActivity)
+            return;
+
         final GeofencingRequest geofencingRequest = createGeofencingRequest();
         if (geofencingRequest == null) return;
 
@@ -292,6 +330,9 @@ public class Sketch extends PApplet {
 
     private GeofencingRequest createGeofencingRequest() {
 //        println(geofenceList);
+        if (geofenceList == null)
+            return null;
+
         try {
             return new GeofencingRequest.Builder()
                     .addGeofences(geofenceList)
@@ -311,6 +352,20 @@ public class Sketch extends PApplet {
         Toast t = Toast.makeText(context, text, duration);
         t.setGravity(Gravity.CENTER_VERTICAL | Gravity.CENTER_HORIZONTAL, 0, 0);
         t.show();
+    }
+
+    private void clearGeofence() {
+        locationProvider.removeGeofences(createNotificationBroadcastPendingIntent()).subscribe(new Action1<Status>() {
+            @Override
+            public void call(Status status) {
+                sendToast("Geofences removed", Toast.LENGTH_SHORT);
+            }
+        }, new Action1<Throwable>() {
+            @Override
+            public void call(Throwable throwable) {
+                sendToast("Error removing geofences", Toast.LENGTH_SHORT);
+            }
+        });
     }
 }
 
